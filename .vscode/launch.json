@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug Workflow Engine",
+            "request": "launch",
+            "mainClass": "com.lu4mic.workflow_engine.WorkflowEngineApplication",
+            "projectName": "workflow-engine",
+            "env": {
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": "5432",
+                "POSTGRES_DB": "workflow_engine",
+                "POSTGRES_USER": "local_user",
+                "POSTGRES_PASSWORD": "local_db_password"
+            },
+            "preLaunchTask": "Start debug PostgreSQL",
+            "postDebugTask": "Stop debug PostgreSQL"
+        }
+    ]
+}

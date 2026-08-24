@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start debug PostgreSQL",
+            "type": "shell",
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "--detach",
+                "--name",
+                "workflow-db",
+                "--env",
+                "POSTGRES_DB=workflow_engine",
+                "--env",
+                "POSTGRES_USER=local_user",
+                "--env",
+                "POSTGRES_PASSWORD=local_db_password",
+                "--publish",
+                "5432:5432",
+                "postgres:17-alpine"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Stop debug PostgreSQL",
+            "type": "shell",
+            "command": "docker stop workflow-db || true",
+            "problemMatcher": []
+        }
+    ]
+}
