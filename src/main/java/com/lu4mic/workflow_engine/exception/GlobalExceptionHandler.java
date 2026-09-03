@@ -53,4 +53,14 @@ public class GlobalExceptionHandler {
         problem.setTitle("Invalid workflow task");
         return problem;
     }
+
+    @ExceptionHandler(HttpTaskExecutionException.class)
+    public ProblemDetail handleHttpTaskExecution(HttpTaskExecutionException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_GATEWAY,
+                exception.getMessage());
+        problem.setTitle("HTTP task execution failed");
+        problem.setProperty("taskRunId", exception.getTaskRunId());
+        return problem;
+    }
 }

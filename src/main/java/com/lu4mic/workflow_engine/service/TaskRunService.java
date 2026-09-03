@@ -1,7 +1,6 @@
 package com.lu4mic.workflow_engine.service;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -11,6 +10,8 @@ import com.lu4mic.workflow_engine.model.TaskRun;
 import com.lu4mic.workflow_engine.model.TaskRunStatus;
 import com.lu4mic.workflow_engine.model.TaskType;
 import com.lu4mic.workflow_engine.model.WorkflowDependency;
+import com.lu4mic.workflow_engine.model.WorkflowRun;
+import com.lu4mic.workflow_engine.model.WorkflowRunStatus;
 import com.lu4mic.workflow_engine.model.WorkflowTask;
 import com.lu4mic.workflow_engine.repository.TaskRunRepository;
 import com.lu4mic.workflow_engine.repository.WorkflowDependencyRepository;
@@ -43,22 +44,43 @@ public class TaskRunService {
             throw new IllegalStateException("DELAY task must have a positive delayDurationMs");
         }
 
+        WorkflowRun taskRunWorkflowRun = taskRun.getWorkflowRun();
+        WorkflowRunStatus workflowRunStatus = taskRunWorkflowRun.getStatus();
+
+        if (workflowRunStatus == WorkflowRunStatus.PENDING) {
+            taskRunWorkflowRun.start();
+        } else if (workflowRunStatus != WorkflowRunStatus.RUNNING) {
+            throw new IllegalStateException(
+                    "Cannot start a TaskRun when its WorkflowRun is " + workflowRunStatus);
+        }
+
         taskRun.start();
         return delayDurationMs;
     }
 
     @Transactional
     public void completeTaskRun(UUID taskRunId) {
-        TaskRun task = findTaskRun(taskRunId);
+        TaskRun taskRun = findTaskRun(taskRunId);
 
-        task.succeed();
+        taskRun.succeed();
 
-        markUnblockedDependentTasksReady(task);
+        UUID workflowRunId = taskRun.getWorkflowRun().getId();
+        boolean areAllTaskRunsFinished = taskRunRepository.findAllByWorkflowRun_Id(workflowRunId).stream()
+                .allMatch(task -> task.getStatus() == TaskRunStatus.SUCCEEDED);
+        if (areAllTaskRunsFinished) {
+            taskRun.getWorkflowRun().succeed();
+        }
+
+        markUnblockedDependentTasksReady(taskRun);
     }
 
     @Transactional
     public void failTaskRun(UUID taskRunId) {
-        findTaskRun(taskRunId).fail();
+        TaskRun taskRun = findTaskRun(taskRunId);
+
+        taskRun.fail();
+        taskRun.getWorkflowRun().fail();
+
     }
 
     private void markUnblockedDependentTasksReady(TaskRun completedTaskRun) {
@@ -129,11 +151,24 @@ public class TaskRunService {
         if (taskRunWorkflowTask.getHttpUrl() == null || taskRunWorkflowTask.getHttpUrl().isBlank()) {
             throw new IllegalStateException("HTTP task must have a non-blank httpUrl");
         }
+        WorkflowRun taskRunWorkflowRun = taskRun.getWorkflowRun();
+        WorkflowRunStatus workflowRunStatus = taskRunWorkflowRun.getStatus();
+
+        if (workflowRunStatus == WorkflowRunStatus.PENDING) {
+            taskRunWorkflowRun.start();
+        } else if (workflowRunStatus != WorkflowRunStatus.RUNNING) {
+            throw new IllegalStateException(
+                    "Cannot start a TaskRun when its WorkflowRun is " + workflowRunStatus);
+        }
 
         taskRun.start();
 
         return new HttpTaskExecutionResponse(
                 taskRunWorkflowTask.getHttpMethod(),
                 taskRunWorkflowTask.getHttpUrl());
+    }
+
+    public List<TaskRun> findReadyTaskRuns() {
+        return taskRunRepository.findAllByStatus(TaskRunStatus.READY);
     }
 }
