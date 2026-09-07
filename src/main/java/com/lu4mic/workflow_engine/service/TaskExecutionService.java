@@ -1,5 +1,6 @@
 package com.lu4mic.workflow_engine.service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -7,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -22,13 +24,22 @@ import com.lu4mic.workflow_engine.model.TaskRun;
 @Service
 public class TaskExecutionService {
     private static final Logger LOGGER = LoggerFactory.getLogger(TaskExecutionService.class);
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(10);
 
     private final TaskRunService taskRunService;
     private final RestClient restClient;
 
     public TaskExecutionService(TaskRunService taskRunService, RestClient.Builder restClientBuilder) {
         this.taskRunService = taskRunService;
-        this.restClient = restClientBuilder.build();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(HTTP_TIMEOUT);
+        requestFactory.setReadTimeout(HTTP_TIMEOUT);
+        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+    }
+
+    TaskExecutionService(TaskRunService taskRunService, RestClient restClient) {
+        this.taskRunService = taskRunService;
+        this.restClient = restClient;
     }
 
     public void executeDelayTask(UUID taskRunId) {
@@ -63,7 +74,7 @@ public class TaskExecutionService {
             taskRunService.failTaskRun(taskRunId);
             throw new HttpTaskExecutionException(
                     taskRunId,
-                    "could not connect to the downstream service",
+                    "downstream service connection failed or timed out",
                     exception);
         } catch (RestClientException exception) {
             taskRunService.failTaskRun(taskRunId);

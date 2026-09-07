@@ -120,4 +120,13 @@ public class TaskRun {
         status = TaskRunStatus.FAILED;
         completedAt = LocalDateTime.now();
     }
+
+    public void prepareRetry() {
+        if (status != TaskRunStatus.RUNNING) {
+            throw new IllegalStateException("Only a running task can be retried");
+        }
+
+        status = TaskRunStatus.READY;
+        readyAt = LocalDateTime.now();
+    }
 }

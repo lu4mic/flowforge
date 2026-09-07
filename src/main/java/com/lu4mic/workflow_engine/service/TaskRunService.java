@@ -6,6 +6,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import com.lu4mic.workflow_engine.dto.HttpTaskExecutionResponse;
+import com.lu4mic.workflow_engine.model.TaskAttempt;
+import com.lu4mic.workflow_engine.model.TaskAttemptStatus;
 import com.lu4mic.workflow_engine.model.TaskRun;
 import com.lu4mic.workflow_engine.model.TaskRunStatus;
 import com.lu4mic.workflow_engine.model.TaskType;
@@ -13,6 +15,7 @@ import com.lu4mic.workflow_engine.model.WorkflowDependency;
 import com.lu4mic.workflow_engine.model.WorkflowRun;
 import com.lu4mic.workflow_engine.model.WorkflowRunStatus;
 import com.lu4mic.workflow_engine.model.WorkflowTask;
+import com.lu4mic.workflow_engine.repository.TaskAttemptRepository;
 import com.lu4mic.workflow_engine.repository.TaskRunRepository;
 import com.lu4mic.workflow_engine.repository.WorkflowDependencyRepository;
 
@@ -20,14 +23,22 @@ import jakarta.transaction.Transactional;
 
 @Service
 public class TaskRunService {
+    private static final int MAX_ATTEMPTS = 3;
+
     private final WorkflowDependencyRepository dependencyRepository;
     private final TaskRunRepository taskRunRepository;
+    private final TaskAttemptRepository taskAttemptRepository;
+    private final TaskAttemptService taskAttemptService;
 
     public TaskRunService(
             WorkflowDependencyRepository dependencyRepository,
-            TaskRunRepository taskRunRepository) {
+            TaskRunRepository taskRunRepository,
+            TaskAttemptRepository taskAttemptRepository,
+            TaskAttemptService taskAttemptService) {
         this.dependencyRepository = dependencyRepository;
         this.taskRunRepository = taskRunRepository;
+        this.taskAttemptRepository = taskAttemptRepository;
+        this.taskAttemptService = taskAttemptService;
     }
 
     @Transactional
@@ -55,6 +66,7 @@ public class TaskRunService {
         }
 
         taskRun.start();
+        taskAttemptService.createTaskAttempt(taskRun);
         return delayDurationMs;
     }
 
@@ -62,7 +74,10 @@ public class TaskRunService {
     public void completeTaskRun(UUID taskRunId) {
         TaskRun taskRun = findTaskRun(taskRunId);
 
+        TaskAttempt taskAttempt = findRunningAttempt(taskRun);
+
         taskRun.succeed();
+        taskAttempt.succeed();
 
         UUID workflowRunId = taskRun.getWorkflowRun().getId();
         boolean areAllTaskRunsFinished = taskRunRepository.findAllByWorkflowRun_Id(workflowRunId).stream()
@@ -77,10 +92,25 @@ public class TaskRunService {
     @Transactional
     public void failTaskRun(UUID taskRunId) {
         TaskRun taskRun = findTaskRun(taskRunId);
+        TaskAttempt taskAttempt = findRunningAttempt(taskRun);
+
+        taskAttempt.fail();
+
+        if (taskAttempt.getAttemptNumber() < MAX_ATTEMPTS) {
+            taskRun.prepareRetry();
+            return;
+        }
 
         taskRun.fail();
         taskRun.getWorkflowRun().fail();
+    }
 
+    private TaskAttempt findRunningAttempt(TaskRun taskRun) {
+        return taskAttemptRepository
+                .findTopByTaskRunOrderByAttemptNumberDesc(taskRun)
+                .filter(attempt -> attempt.getStatus() == TaskAttemptStatus.RUNNING)
+                .orElseThrow(() -> new IllegalStateException(
+                        "No running attempt found for TaskRun " + taskRun.getId()));
     }
 
     private void markUnblockedDependentTasksReady(TaskRun completedTaskRun) {
@@ -162,6 +192,7 @@ public class TaskRunService {
         }
 
         taskRun.start();
+        taskAttemptService.createTaskAttempt(taskRun);
 
         return new HttpTaskExecutionResponse(
                 taskRunWorkflowTask.getHttpMethod(),
