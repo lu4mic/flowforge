@@ -1,5 +1,6 @@
 package com.lu4mic.workflow_engine.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,8 +43,8 @@ public class TaskRunService {
     }
 
     @Transactional
-    public long startDelayTaskRun(UUID taskRunId) {
-        TaskRun taskRun = findTaskRun(taskRunId);
+    public long startDelayTaskRun(UUID taskRunId, UUID workerId) {
+        TaskRun taskRun = findTaskRunForUpdate(taskRunId);
         WorkflowTask workflowTask = taskRun.getWorkflowTask();
 
         if (workflowTask.getTaskType() != TaskType.DELAY) {
@@ -65,14 +66,15 @@ public class TaskRunService {
                     "Cannot start a TaskRun when its WorkflowRun is " + workflowRunStatus);
         }
 
-        taskRun.start();
+        taskRun.start(workerId, LocalDateTime.now());
         taskAttemptService.createTaskAttempt(taskRun);
         return delayDurationMs;
     }
 
     @Transactional
-    public void completeTaskRun(UUID taskRunId) {
-        TaskRun taskRun = findTaskRun(taskRunId);
+    public void completeTaskRun(UUID taskRunId, UUID workerId) {
+        TaskRun taskRun = findTaskRunForUpdate(taskRunId);
+        taskRun.requireActiveLease(workerId, LocalDateTime.now());
 
         TaskAttempt taskAttempt = findRunningAttempt(taskRun);
 
@@ -90,14 +92,34 @@ public class TaskRunService {
     }
 
     @Transactional
-    public void failTaskRun(UUID taskRunId) {
-        TaskRun taskRun = findTaskRun(taskRunId);
+    public void failTaskRun(UUID taskRunId, UUID workerId) {
+        TaskRun taskRun = findTaskRunForUpdate(taskRunId);
+        taskRun.requireActiveLease(workerId, LocalDateTime.now());
         TaskAttempt taskAttempt = findRunningAttempt(taskRun);
+
+        applyAttemptFailure(taskRun, taskAttempt, LocalDateTime.now());
+    }
+
+    @Transactional
+    public void recoverExpiredTaskRun(UUID taskRunId, LocalDateTime now) {
+        TaskRun taskRun = findTaskRunForUpdate(taskRunId);
+        if (taskRun.getStatus() != TaskRunStatus.RUNNING
+                || taskRun.getLeaseExpiresAt() == null
+                || taskRun.getLeaseExpiresAt().isAfter(now)) {
+            return;
+        }
+
+        TaskAttempt taskAttempt = findRunningAttempt(taskRun);
+        applyAttemptFailure(taskRun, taskAttempt, now);
+    }
+
+    private void applyAttemptFailure(TaskRun taskRun, TaskAttempt taskAttempt, LocalDateTime now) {
 
         taskAttempt.fail();
 
         if (taskAttempt.getAttemptNumber() < MAX_ATTEMPTS) {
-            taskRun.prepareRetry();
+            long backoffSeconds = 1L << (taskAttempt.getAttemptNumber() - 1);
+            taskRun.prepareRetry(now.plusSeconds(backoffSeconds));
             return;
         }
 
@@ -157,15 +179,21 @@ public class TaskRunService {
                                 + " and workflowTask " + workflowTaskId));
     }
 
-    private TaskRun findTaskRun(UUID taskRunId) {
+    public TaskRun findTaskRun(UUID taskRunId) {
         return taskRunRepository.findById(taskRunId)
                 .orElseThrow(() -> new IllegalStateException(
                         "TaskRun not found: " + taskRunId));
     }
 
+    private TaskRun findTaskRunForUpdate(UUID taskRunId) {
+        return taskRunRepository.findByIdForUpdate(taskRunId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "TaskRun not found: " + taskRunId));
+    }
+
     @Transactional
-    public HttpTaskExecutionResponse startHttpTaskRun(UUID taskRunId) {
-        TaskRun taskRun = taskRunRepository.findById(taskRunId)
+    public HttpTaskExecutionResponse startHttpTaskRun(UUID taskRunId, UUID workerId) {
+        TaskRun taskRun = taskRunRepository.findByIdForUpdate(taskRunId)
                 .orElseThrow(() -> new IllegalStateException("TaskRun not found"));
 
         WorkflowTask taskRunWorkflowTask = taskRun.getWorkflowTask();
@@ -191,7 +219,7 @@ public class TaskRunService {
                     "Cannot start a TaskRun when its WorkflowRun is " + workflowRunStatus);
         }
 
-        taskRun.start();
+        taskRun.start(workerId, LocalDateTime.now());
         taskAttemptService.createTaskAttempt(taskRun);
 
         return new HttpTaskExecutionResponse(
@@ -199,7 +227,4 @@ public class TaskRunService {
                 taskRunWorkflowTask.getHttpUrl());
     }
 
-    public List<TaskRun> findReadyTaskRuns() {
-        return taskRunRepository.findAllByStatus(TaskRunStatus.READY);
-    }
 }

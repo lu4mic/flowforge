@@ -17,6 +17,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,6 +65,7 @@ class TaskExecutionAttemptTest {
     private TaskExecutionService executionService;
     private MockRestServiceServer server;
     private TaskRun taskRun;
+    private WorkerIdentity workerIdentity;
     private final AtomicReference<TaskAttempt> savedAttempt = new AtomicReference<>();
 
     @BeforeEach
@@ -73,7 +75,12 @@ class TaskExecutionAttemptTest {
                 dependencyRepository, runRepository, attemptRepository, attemptService);
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        executionService = new TaskExecutionService(runService, builder.build());
+        workerIdentity = new WorkerIdentity(UUID.randomUUID());
+        executionService = new TaskExecutionService(
+                runService,
+                mock(TaskLeaseService.class),
+                workerIdentity,
+                builder.build());
     }
 
     @ParameterizedTest
@@ -151,6 +158,7 @@ class TaskExecutionAttemptTest {
         assertEquals(TaskRunStatus.READY, taskRun.getStatus());
         assertEquals(WorkflowRunStatus.RUNNING, taskRun.getWorkflowRun().getStatus());
 
+        leaseToCurrentWorker();
         executionService.executeHttpTask(taskRun.getId());
 
         TaskAttempt secondAttempt = savedAttempt.get();
@@ -201,7 +209,8 @@ class TaskExecutionAttemptTest {
         taskRun = new TaskRun(workflowRun, task);
         ReflectionTestUtils.setField(taskRun, "id", UUID.randomUUID());
         taskRun.markReady();
-        when(runRepository.findById(taskRun.getId())).thenReturn(Optional.of(taskRun));
+        leaseToCurrentWorker();
+        when(runRepository.findByIdForUpdate(taskRun.getId())).thenReturn(Optional.of(taskRun));
         when(attemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenAnswer(invocation -> Optional.ofNullable(savedAttempt.get()));
         when(attemptRepository.save(any(TaskAttempt.class))).thenAnswer(invocation -> {
@@ -209,6 +218,11 @@ class TaskExecutionAttemptTest {
             savedAttempt.set(attempt);
             return attempt;
         });
+    }
+
+    private void leaseToCurrentWorker() {
+        ReflectionTestUtils.setField(taskRun, "leaseOwner", workerIdentity.getId());
+        ReflectionTestUtils.setField(taskRun, "leaseExpiresAt", LocalDateTime.now().plusMinutes(1));
     }
 
     private void prepareWorkflowCompletion() {

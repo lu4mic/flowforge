@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -50,6 +52,7 @@ class TaskRunServiceTest {
     private WorkflowRun workflowRun;
     private TaskRun taskRun;
     private TaskAttempt attempt;
+    private UUID workerId;
 
     @BeforeEach
     void setUp() {
@@ -59,9 +62,12 @@ class TaskRunServiceTest {
         workflowRun.start();
         taskRun = newTaskRun("first");
         taskRun.markReady();
-        taskRun.start();
+        workerId = UUID.randomUUID();
+        ReflectionTestUtils.setField(taskRun, "leaseOwner", workerId);
+        ReflectionTestUtils.setField(taskRun, "leaseExpiresAt", LocalDateTime.now().plusMinutes(1));
+        taskRun.start(workerId, LocalDateTime.now());
         attempt = new TaskAttempt(taskRun, 1);
-        when(taskRunRepository.findById(taskRun.getId())).thenReturn(Optional.of(taskRun));
+        when(taskRunRepository.findByIdForUpdate(taskRun.getId())).thenReturn(Optional.of(taskRun));
     }
 
     @Test
@@ -70,7 +76,7 @@ class TaskRunServiceTest {
                 .thenReturn(Optional.of(attempt));
         when(taskRunRepository.findAllByWorkflowRun_Id(workflowRun.getId())).thenReturn(List.of(taskRun));
 
-        service.completeTaskRun(taskRun.getId());
+        service.completeTaskRun(taskRun.getId(), workerId);
 
         assertEquals(TaskRunStatus.SUCCEEDED, taskRun.getStatus());
         assertEquals(TaskAttemptStatus.SUCCEEDED, attempt.getStatus());
@@ -96,7 +102,7 @@ class TaskRunServiceTest {
         when(taskRunRepository.findByWorkflowRun_IdAndWorkflowTask_Id(
                 workflowRun.getId(), dependent.getWorkflowTask().getId())).thenReturn(Optional.of(dependent));
 
-        service.completeTaskRun(taskRun.getId());
+        service.completeTaskRun(taskRun.getId(), workerId);
 
         assertEquals(TaskAttemptStatus.SUCCEEDED, attempt.getStatus());
         assertNotNull(attempt.getCompletedAt());
@@ -110,7 +116,7 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.empty());
 
-        assertThrows(IllegalStateException.class, () -> service.completeTaskRun(taskRun.getId()));
+        assertThrows(IllegalStateException.class, () -> service.completeTaskRun(taskRun.getId(), workerId));
 
         assertEquals(TaskRunStatus.RUNNING, taskRun.getStatus());
         assertNull(taskRun.getCompletedAt());
@@ -124,7 +130,7 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.of(attempt));
 
-        assertThrows(IllegalStateException.class, () -> service.completeTaskRun(taskRun.getId()));
+        assertThrows(IllegalStateException.class, () -> service.completeTaskRun(taskRun.getId(), workerId));
 
         assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
         assertEquals(TaskRunStatus.RUNNING, taskRun.getStatus());
@@ -137,7 +143,7 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.empty());
 
-        assertThrows(IllegalStateException.class, () -> service.failTaskRun(taskRun.getId()));
+        assertThrows(IllegalStateException.class, () -> service.failTaskRun(taskRun.getId(), workerId));
 
         assertEquals(TaskRunStatus.RUNNING, taskRun.getStatus());
         assertEquals(WorkflowRunStatus.RUNNING, workflowRun.getStatus());
@@ -151,7 +157,7 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.of(attempt));
 
-        assertThrows(IllegalStateException.class, () -> service.failTaskRun(taskRun.getId()));
+        assertThrows(IllegalStateException.class, () -> service.failTaskRun(taskRun.getId(), workerId));
 
         assertEquals(TaskAttemptStatus.SUCCEEDED, attempt.getStatus());
         assertEquals(completedAt, attempt.getCompletedAt());
@@ -165,11 +171,14 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.of(attempt));
 
-        service.failTaskRun(taskRun.getId());
+        service.failTaskRun(taskRun.getId(), workerId);
 
         assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
         assertNotNull(attempt.getCompletedAt());
         assertEquals(TaskRunStatus.READY, taskRun.getStatus());
+        assertNotNull(taskRun.getNextAttemptAt());
+        assertNull(taskRun.getLeaseOwner());
+        assertNull(taskRun.getLeaseExpiresAt());
         assertEquals(WorkflowRunStatus.RUNNING, workflowRun.getStatus());
         verifyNoInteractions(taskAttemptService, dependencyRepository);
     }
@@ -179,11 +188,13 @@ class TaskRunServiceTest {
         attempt = new TaskAttempt(taskRun, 2);
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.of(attempt));
+        LocalDateTime beforeFailure = LocalDateTime.now();
 
-        service.failTaskRun(taskRun.getId());
+        service.failTaskRun(taskRun.getId(), workerId);
 
         assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
         assertEquals(TaskRunStatus.READY, taskRun.getStatus());
+        assertTrue(!taskRun.getNextAttemptAt().isBefore(beforeFailure.plusSeconds(2)));
         assertEquals(WorkflowRunStatus.RUNNING, workflowRun.getStatus());
     }
 
@@ -193,7 +204,7 @@ class TaskRunServiceTest {
         when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
                 .thenReturn(Optional.of(attempt));
 
-        service.failTaskRun(taskRun.getId());
+        service.failTaskRun(taskRun.getId(), workerId);
 
         assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
         assertNotNull(attempt.getCompletedAt());
@@ -201,6 +212,40 @@ class TaskRunServiceTest {
         assertNotNull(taskRun.getCompletedAt());
         assertEquals(WorkflowRunStatus.FAILED, workflowRun.getStatus());
         verifyNoInteractions(taskAttemptService, dependencyRepository);
+    }
+
+    @Test
+    void expiredLeaseRecoveryFailsAttemptAndSchedulesRetry() {
+        LocalDateTime recoveryTime = LocalDateTime.now();
+        ReflectionTestUtils.setField(taskRun, "leaseExpiresAt", recoveryTime.minusSeconds(1));
+        when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
+                .thenReturn(Optional.of(attempt));
+
+        service.recoverExpiredTaskRun(taskRun.getId(), recoveryTime);
+
+        assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
+        assertEquals(TaskRunStatus.READY, taskRun.getStatus());
+        assertEquals(recoveryTime.plusSeconds(1), taskRun.getNextAttemptAt());
+        assertNull(taskRun.getLeaseOwner());
+        assertEquals(WorkflowRunStatus.RUNNING, workflowRun.getStatus());
+        verifyNoInteractions(taskAttemptService);
+    }
+
+    @Test
+    void expiredLeaseRecoveryExhaustsThirdAttempt() {
+        LocalDateTime recoveryTime = LocalDateTime.now();
+        ReflectionTestUtils.setField(taskRun, "leaseExpiresAt", recoveryTime.minusSeconds(1));
+        attempt = new TaskAttempt(taskRun, 3);
+        when(taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(taskRun))
+                .thenReturn(Optional.of(attempt));
+
+        service.recoverExpiredTaskRun(taskRun.getId(), recoveryTime);
+
+        assertEquals(TaskAttemptStatus.FAILED, attempt.getStatus());
+        assertEquals(TaskRunStatus.FAILED, taskRun.getStatus());
+        assertEquals(WorkflowRunStatus.FAILED, workflowRun.getStatus());
+        assertNull(taskRun.getLeaseOwner());
+        verifyNoInteractions(taskAttemptService);
     }
 
     private TaskRun newTaskRun(String key) {

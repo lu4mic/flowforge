@@ -1,6 +1,7 @@
 package com.lu4mic.workflow_engine.model;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -41,6 +42,9 @@ public class TaskRun {
     private LocalDateTime readyAt;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
+    private LocalDateTime nextAttemptAt;
+    private UUID leaseOwner;
+    private LocalDateTime leaseExpiresAt;
 
     protected TaskRun() {
     }
@@ -53,6 +57,9 @@ public class TaskRun {
         this.readyAt = null;
         this.startedAt = null;
         this.completedAt = null;
+        this.nextAttemptAt = null;
+        this.leaseOwner = null;
+        this.leaseExpiresAt = null;
     }
 
     public UUID getId() {
@@ -87,6 +94,18 @@ public class TaskRun {
         return completedAt;
     }
 
+    public LocalDateTime getNextAttemptAt() {
+        return nextAttemptAt;
+    }
+
+    public UUID getLeaseOwner() {
+        return leaseOwner;
+    }
+
+    public LocalDateTime getLeaseExpiresAt() {
+        return leaseExpiresAt;
+    }
+
     public void markReady() {
         if (status != TaskRunStatus.PENDING) {
             throw new IllegalStateException("Only a pending task can become ready");
@@ -96,12 +115,14 @@ public class TaskRun {
         readyAt = LocalDateTime.now();
     }
 
-    public void start() {
+    public void start(UUID workerId, LocalDateTime now) {
         if (status != TaskRunStatus.READY) {
             throw new IllegalStateException("Only a ready task can start");
         }
+        requireActiveLease(workerId, now);
         status = TaskRunStatus.RUNNING;
-        startedAt = LocalDateTime.now();
+        startedAt = now;
+        nextAttemptAt = null;
     }
 
     public void succeed() {
@@ -110,6 +131,7 @@ public class TaskRun {
         }
         status = TaskRunStatus.SUCCEEDED;
         completedAt = LocalDateTime.now();
+        clearLease();
     }
 
     public void fail() {
@@ -119,14 +141,30 @@ public class TaskRun {
 
         status = TaskRunStatus.FAILED;
         completedAt = LocalDateTime.now();
+        clearLease();
     }
 
-    public void prepareRetry() {
+    public void prepareRetry(LocalDateTime nextAttemptAt) {
         if (status != TaskRunStatus.RUNNING) {
             throw new IllegalStateException("Only a running task can be retried");
         }
 
         status = TaskRunStatus.READY;
         readyAt = LocalDateTime.now();
+        this.nextAttemptAt = Objects.requireNonNull(nextAttemptAt, "nextAttemptAt is required");
+        clearLease();
+    }
+
+    public void requireActiveLease(UUID workerId, LocalDateTime now) {
+        if (!Objects.equals(leaseOwner, workerId)
+                || leaseExpiresAt == null
+                || !leaseExpiresAt.isAfter(now)) {
+            throw new IllegalStateException("TaskRun is not leased by worker " + workerId);
+        }
+    }
+
+    private void clearLease() {
+        leaseOwner = null;
+        leaseExpiresAt = null;
     }
 }
