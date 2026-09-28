@@ -1,5 +1,7 @@
 # Durable Workflow Engine
 
+[![Application CI](https://github.com/lu4mic/flowforge/actions/workflows/application-ci.yml/badge.svg)](https://github.com/lu4mic/flowforge/actions/workflows/application-ci.yml)
+
 A backend workflow orchestration engine built with **Java 21, Spring Boot, JPA, and PostgreSQL**.
 
 The project models workflows as **DAGs (Directed Acyclic Graphs)** and keeps execution state durable in the database. The goal is to evolve it into a distributed workflow engine with scheduling, retries, worker coordination, and Azure-based execution.
@@ -91,6 +93,16 @@ Unlock downstream tasks
 - PostgreSQL
 - Maven
 - Bean Validation
+
+## Verify changes locally
+
+Run the same Maven lifecycle used by application CI:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress verify
+```
+
+The workflow runs for pull requests and pushes to `main`. Failed test reports are retained as short-lived workflow artifacts when Surefire produces them.
 
 ## Next milestones
 
