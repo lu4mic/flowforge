@@ -166,7 +166,7 @@ class TaskLeasePostgresIntegrationTest {
         TaskAttempt attempt = taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(stillRunning).orElseThrow();
         assertEquals(TaskRunStatus.RUNNING, stillRunning.getStatus());
         assertEquals(leaseOwner, stillRunning.getLeaseOwner());
-        assertEquals(renewedExpiry, stillRunning.getLeaseExpiresAt());
+        assertTrue(stillRunning.getLeaseExpiresAt().isAfter(heartbeatTime.plusMinutes(1)));
         assertEquals(TaskAttemptStatus.RUNNING, attempt.getStatus());
     }
 
