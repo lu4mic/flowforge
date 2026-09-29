@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,10 +83,10 @@ class TaskLeasePostgresIntegrationTest {
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             Future<Integer> claimA = executor.submit(() -> claimAfterBarrier(taskRunId, workerA, ready, start));
             Future<Integer> claimB = executor.submit(() -> claimAfterBarrier(taskRunId, workerB, ready, start));
-            ready.await();
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "claim workers did not reach the barrier");
             start.countDown();
 
-            assertEquals(1, claimA.get() + claimB.get());
+            assertEquals(1, claimA.get(5, TimeUnit.SECONDS) + claimB.get(5, TimeUnit.SECONDS));
         }
 
         TaskRun claimed = taskRunRepository.findById(taskRunId).orElseThrow();
@@ -120,10 +121,10 @@ class TaskLeasePostgresIntegrationTest {
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             Future<?> recoveryA = executor.submit(() -> recoverAfterBarrier(taskRunId, recoveryTime, ready, start));
             Future<?> recoveryB = executor.submit(() -> recoverAfterBarrier(taskRunId, recoveryTime, ready, start));
-            ready.await();
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "recovery workers did not reach the barrier");
             start.countDown();
-            recoveryA.get();
-            recoveryB.get();
+            recoveryA.get(5, TimeUnit.SECONDS);
+            recoveryB.get(5, TimeUnit.SECONDS);
         }
 
         TaskRun recovered = taskRunRepository.findById(taskRunId).orElseThrow();
