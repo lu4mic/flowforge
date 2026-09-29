@@ -96,6 +96,29 @@ class TaskLeasePostgresIntegrationTest {
     }
 
     @Test
+    void workersCanClaimIndependentReadyTasksConcurrently() throws Exception {
+        UUID taskRunA = createReadyTaskRun();
+        UUID taskRunB = createReadyTaskRun();
+        UUID workerA = UUID.randomUUID();
+        UUID workerB = UUID.randomUUID();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<Integer> claimA = executor.submit(() -> claimAfterBarrier(taskRunA, workerA, ready, start));
+            Future<Integer> claimB = executor.submit(() -> claimAfterBarrier(taskRunB, workerB, ready, start));
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "claim workers did not reach the barrier");
+            start.countDown();
+
+            assertEquals(1, claimA.get(5, TimeUnit.SECONDS));
+            assertEquals(1, claimB.get(5, TimeUnit.SECONDS));
+        }
+
+        assertEquals(workerA, taskRunRepository.findById(taskRunA).orElseThrow().getLeaseOwner());
+        assertEquals(workerB, taskRunRepository.findById(taskRunB).orElseThrow().getLeaseOwner());
+    }
+
+    @Test
     void staleWorkerCannotCompleteAfterItsLeaseExpires() {
         UUID workerA = UUID.randomUUID();
         UUID taskRunId = createAndStartTaskRun(workerA);
