@@ -111,6 +111,21 @@ class TaskLeasePostgresIntegrationTest {
     }
 
     @Test
+    void differentWorkerCannotCompleteAnActivelyLeasedTask() {
+        UUID leaseOwner = UUID.randomUUID();
+        UUID taskRunId = createAndStartTaskRun(leaseOwner);
+
+        assertThrows(IllegalStateException.class,
+                () -> taskRunService.completeTaskRun(taskRunId, UUID.randomUUID()));
+
+        TaskRun unchanged = taskRunRepository.findById(taskRunId).orElseThrow();
+        TaskAttempt attempt = taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(unchanged).orElseThrow();
+        assertEquals(TaskRunStatus.RUNNING, unchanged.getStatus());
+        assertEquals(leaseOwner, unchanged.getLeaseOwner());
+        assertEquals(TaskAttemptStatus.RUNNING, attempt.getStatus());
+    }
+
+    @Test
     void competingRecoveryWorkersRecoverAnExpiredRunningTaskExactlyOnce() throws Exception {
         UUID taskRunId = createAndStartTaskRun(UUID.randomUUID());
         LocalDateTime recoveryTime = LocalDateTime.now();
