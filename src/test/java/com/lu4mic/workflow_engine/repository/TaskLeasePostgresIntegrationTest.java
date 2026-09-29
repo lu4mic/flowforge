@@ -149,6 +149,28 @@ class TaskLeasePostgresIntegrationTest {
     }
 
     @Test
+    void renewedLeasePreventsPrematureRecovery() {
+        UUID leaseOwner = UUID.randomUUID();
+        UUID taskRunId = createAndStartTaskRun(leaseOwner);
+        LocalDateTime heartbeatTime = LocalDateTime.now();
+        LocalDateTime renewedExpiry = heartbeatTime.plusMinutes(2);
+
+        int renewed = new TransactionTemplate(transactionManager).execute(status ->
+                taskRunRepository.renewOwnedLeases(
+                        leaseOwner, TaskRunStatus.RUNNING, heartbeatTime, renewedExpiry));
+        assertEquals(1, renewed);
+
+        taskRunService.recoverExpiredTaskRun(taskRunId, heartbeatTime.plusMinutes(1));
+
+        TaskRun stillRunning = taskRunRepository.findById(taskRunId).orElseThrow();
+        TaskAttempt attempt = taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(stillRunning).orElseThrow();
+        assertEquals(TaskRunStatus.RUNNING, stillRunning.getStatus());
+        assertEquals(leaseOwner, stillRunning.getLeaseOwner());
+        assertEquals(renewedExpiry, stillRunning.getLeaseExpiresAt());
+        assertEquals(TaskAttemptStatus.RUNNING, attempt.getStatus());
+    }
+
+    @Test
     void competingRecoveryWorkersRecoverAnExpiredRunningTaskExactlyOnce() throws Exception {
         UUID taskRunId = createAndStartTaskRun(UUID.randomUUID());
         LocalDateTime recoveryTime = LocalDateTime.now();
