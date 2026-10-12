@@ -197,6 +197,25 @@ class TaskLeasePostgresIntegrationTest {
         assertEquals(TaskAttemptStatus.FAILED, attempts.getFirst().getStatus());
     }
 
+    @Test
+    void recoveredExpiredTaskCanBeClaimedByAnotherWorkerAfterBackoff() {
+        UUID expiredLeaseOwner = UUID.randomUUID();
+        UUID replacementWorker = UUID.randomUUID();
+        UUID taskRunId = createAndStartTaskRun(expiredLeaseOwner);
+        LocalDateTime recoveryTime = LocalDateTime.now();
+        expireLease(taskRunId, recoveryTime.minusSeconds(1));
+
+        taskRunService.recoverExpiredTaskRun(taskRunId, recoveryTime);
+
+        LocalDateTime claimTime = recoveryTime.plusSeconds(2);
+        assertEquals(1, claim(taskRunId, replacementWorker, claimTime));
+
+        TaskRun reclaimed = taskRunRepository.findById(taskRunId).orElseThrow();
+        assertEquals(TaskRunStatus.READY, reclaimed.getStatus());
+        assertEquals(replacementWorker, reclaimed.getLeaseOwner());
+        assertTrue(reclaimed.getLeaseExpiresAt().isAfter(claimTime));
+    }
+
     private int claimAfterBarrier(UUID taskRunId, UUID workerId,
             CountDownLatch ready, CountDownLatch start) throws Exception {
         ready.countDown();
