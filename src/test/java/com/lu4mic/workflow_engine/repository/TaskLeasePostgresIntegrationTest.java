@@ -119,6 +119,21 @@ class TaskLeasePostgresIntegrationTest {
     }
 
     @Test
+    void leaseOwnerCanCompleteAnActivelyLeasedTask() {
+        UUID leaseOwner = UUID.randomUUID();
+        UUID taskRunId = createAndStartTaskRun(leaseOwner);
+
+        taskRunService.completeTaskRun(taskRunId, leaseOwner);
+
+        TaskRun completed = taskRunRepository.findById(taskRunId).orElseThrow();
+        TaskAttempt attempt = taskAttemptRepository.findTopByTaskRunOrderByAttemptNumberDesc(completed).orElseThrow();
+        assertEquals(TaskRunStatus.SUCCEEDED, completed.getStatus());
+        assertNull(completed.getLeaseOwner());
+        assertNull(completed.getLeaseExpiresAt());
+        assertEquals(TaskAttemptStatus.SUCCEEDED, attempt.getStatus());
+    }
+
+    @Test
     void staleWorkerCannotCompleteAfterItsLeaseExpires() {
         UUID workerA = UUID.randomUUID();
         UUID taskRunId = createAndStartTaskRun(workerA);
