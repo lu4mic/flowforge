@@ -149,6 +149,26 @@ class TaskLeasePostgresIntegrationTest {
     }
 
     @Test
+    void differentWorkerCannotRenewAnActivelyLeasedTask() {
+        UUID leaseOwner = UUID.randomUUID();
+        UUID otherWorker = UUID.randomUUID();
+        UUID taskRunId = createAndStartTaskRun(leaseOwner);
+        TaskRun beforeHeartbeat = taskRunRepository.findById(taskRunId).orElseThrow();
+        LocalDateTime originalExpiry = beforeHeartbeat.getLeaseExpiresAt();
+        LocalDateTime heartbeatTime = LocalDateTime.now();
+
+        int renewed = new TransactionTemplate(transactionManager).execute(status ->
+                taskRunRepository.renewOwnedLeases(
+                        otherWorker, TaskRunStatus.RUNNING,
+                        heartbeatTime, heartbeatTime.plusMinutes(2)));
+
+        assertEquals(0, renewed);
+        TaskRun unchanged = taskRunRepository.findById(taskRunId).orElseThrow();
+        assertEquals(leaseOwner, unchanged.getLeaseOwner());
+        assertEquals(originalExpiry, unchanged.getLeaseExpiresAt());
+    }
+
+    @Test
     void renewedLeasePreventsPrematureRecovery() {
         UUID leaseOwner = UUID.randomUUID();
         UUID taskRunId = createAndStartTaskRun(leaseOwner);
