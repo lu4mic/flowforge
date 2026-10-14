@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -72,7 +73,7 @@ class TaskLeasePostgresIntegrationTest {
     @Autowired private TaskRunService taskRunService;
     @Autowired private PlatformTransactionManager transactionManager;
 
-    @Test
+    @RepeatedTest(3)
     void twoWorkersRacingTheSameReadyTaskProduceExactlyOneClaim() throws Exception {
         UUID taskRunId = createReadyTaskRun();
         UUID workerA = UUID.randomUUID();
