@@ -86,13 +86,21 @@ class TaskLeasePostgresIntegrationTest {
             assertTrue(ready.await(5, TimeUnit.SECONDS), "claim workers did not reach the barrier");
             start.countDown();
 
-            assertEquals(1, claimA.get(5, TimeUnit.SECONDS) + claimB.get(5, TimeUnit.SECONDS));
+            int workerAClaims = claimA.get(5, TimeUnit.SECONDS);
+            int workerBClaims = claimB.get(5, TimeUnit.SECONDS);
+            String claimDiagnostic = "taskRunId=%s, workerA=%s claims=%d, workerB=%s claims=%d"
+                    .formatted(taskRunId, workerA, workerAClaims, workerB, workerBClaims);
+            assertEquals(1, workerAClaims + workerBClaims, claimDiagnostic);
         }
 
         TaskRun claimed = taskRunRepository.findById(taskRunId).orElseThrow();
-        assertEquals(TaskRunStatus.READY, claimed.getStatus());
-        assertNotNull(claimed.getLeaseExpiresAt());
-        assertTrue(claimed.getLeaseOwner().equals(workerA) || claimed.getLeaseOwner().equals(workerB));
+        String leaseDiagnostic = "taskRunId=%s, workerA=%s, workerB=%s, leaseOwner=%s, leaseExpiresAt=%s"
+                .formatted(taskRunId, workerA, workerB, claimed.getLeaseOwner(), claimed.getLeaseExpiresAt());
+        assertEquals(TaskRunStatus.READY, claimed.getStatus(), leaseDiagnostic);
+        assertNotNull(claimed.getLeaseOwner(), leaseDiagnostic);
+        assertNotNull(claimed.getLeaseExpiresAt(), leaseDiagnostic);
+        assertTrue(claimed.getLeaseOwner().equals(workerA) || claimed.getLeaseOwner().equals(workerB),
+                leaseDiagnostic);
     }
 
     @Test
