@@ -233,7 +233,7 @@ class TaskLeasePostgresIntegrationTest {
         assertEquals(TaskAttemptStatus.RUNNING, attempt.getStatus());
     }
 
-    @Test
+    @RepeatedTest(3)
     void competingRecoveryWorkersRecoverAnExpiredRunningTaskExactlyOnce() throws Exception {
         UUID taskRunId = createAndStartTaskRun(UUID.randomUUID());
         LocalDateTime recoveryTime = LocalDateTime.now();
