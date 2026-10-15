@@ -96,11 +96,28 @@ Unlock downstream tasks
 
 ## Verify changes locally
 
+Use Java 21 and a running Docker daemon accessible to your user. The PostgreSQL
+lease tests use Testcontainers to start an isolated `postgres:16-alpine` container;
+the first run needs access to pull that image and download Maven dependencies.
+The suite supplies its own database connection settings and does not require a
+manually provisioned PostgreSQL instance.
+
 Run the same Maven lifecycle used by application CI:
 
 ```bash
 ./mvnw --batch-mode --no-transfer-progress verify
 ```
+
+To run only the PostgreSQL lease and concurrency suite:
+
+```bash
+./mvnw --batch-mode --no-transfer-progress -Dtest=TaskLeasePostgresIntegrationTest test
+```
+
+The same-task claim race and competing lease-recovery race each run three times
+per suite invocation. These repetitions help catch timing-sensitive regressions;
+they do not prove the absence of concurrency defects. Local test reports are
+written to `target/surefire-reports/`.
 
 The workflow runs for pull requests and pushes to `main`. Failed test reports are retained as short-lived workflow artifacts when Surefire produces them.
 
