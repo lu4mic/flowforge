@@ -4,7 +4,7 @@
 
 A backend workflow orchestration engine built with **Java 21, Spring Boot, JPA, and PostgreSQL**.
 
-The project models workflows as **DAGs (Directed Acyclic Graphs)** and keeps execution state durable in the database. The goal is to evolve it into a distributed workflow engine with scheduling, retries, worker coordination, and Azure-based execution.
+The project models workflows as **DAGs (Directed Acyclic Graphs)** and keeps execution state durable in the database. It currently executes tasks through database polling, with retries, task attempts and worker leases. Queue dispatch, separate coordinator/worker roles and Azure deployment remain planned.
 
 ## What it supports today
 
@@ -18,7 +18,16 @@ The project models workflows as **DAGs (Directed Acyclic Graphs)** and keeps exe
 - Track task lifecycle: `PENDING -> READY -> RUNNING -> SUCCEEDED/FAILED`
 - Unlock dependent tasks when all prerequisites succeed
 - Execute `DELAY` tasks
-- Prepare `HTTP` tasks for execution
+- Execute `HTTP` tasks with connection/read timeouts and treat non-2xx responses as failed attempts
+- Poll eligible `READY` tasks and claim them atomically using a per-process worker identity
+- Persist `TaskAttempt` records and retry failed attempts with exponential backoff (up to three total attempts)
+- Renew owned running leases and recover expired running attempts through the retry/failure path
+- Mark a workflow run successful when all tasks succeed, or failed when a task exhausts its attempts
+
+These are implemented mechanisms, not a claim of exactly-once external effects or
+production readiness. Re-executing an HTTP task after a failure or expired lease
+can repeat an external side effect; task endpoints must handle that possibility.
+PostgreSQL concurrency verification and backend hardening remain open backlog work.
 
 ## Architecture
 
@@ -121,17 +130,20 @@ written to `target/surefire-reports/`.
 
 The workflow runs for pull requests and pushes to `main`. Failed test reports are retained as short-lived workflow artifacts when Surefire produces them.
 
-## Next milestones
+## Remaining milestones
 
-- Execute real HTTP requests
-- Automatic scheduler for `READY` tasks
-- Workflow completion/failure propagation
-- Retries and backoff
-- Task attempts
-- Worker leases and crash recovery
-- Azure Queue Storage
-- Azure Container Apps
-- Docker and CI/CD
+Follow the [execution roadmap](https://github.com/lu4mic/flowforge/issues/12)
+for dependency order and work that can proceed in parallel:
+
+- Complete [PostgreSQL concurrency verification](https://github.com/lu4mic/flowforge/issues/2) and [backend hardening](https://github.com/lu4mic/flowforge/issues/3)
+- Publish [immutable application images](https://github.com/lu4mic/flowforge/issues/4)
+- Decide and integrate a [durable queue](https://github.com/lu4mic/flowforge/issues/5), then [separate coordinator/worker roles](https://github.com/lu4mic/flowforge/issues/6)
+- Build cloud-free distributed tests, a repeatable recovery demo and final documentation as tracked in the roadmap
+
+Azure/Terraform work belongs in [flowforge-infra](https://github.com/lu4mic/flowforge-infra).
+Cloud provisioning, deployment and teardown are manual milestones, not part of
+automatic application CI. No Azure deployment is implemented by this repository's
+current CI workflow.
 
 ## Why this project
 
