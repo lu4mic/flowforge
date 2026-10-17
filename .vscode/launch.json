@@ -8,7 +8,7 @@
             "mainClass": "com.lu4mic.workflow_engine.WorkflowEngineApplication",
             "projectName": "workflow-engine",
             "env": {
-                "POSTGRES_HOST": "localhost",
+                "POSTGRES_HOST": "127.0.0.1",
                 "POSTGRES_PORT": "5432",
                 "POSTGRES_DB": "workflow_engine",
                 "POSTGRES_USER": "local_user",

@@ -103,6 +103,20 @@ Unlock downstream tasks
 - Maven
 - Bean Validation
 
+## Local debug database boundary
+
+The VS Code `Start debug PostgreSQL` task publishes PostgreSQL as
+`127.0.0.1:5432:5432`, and the debugger connects to `127.0.0.1:5432`. Keep this
+explicit loopback binding instead of publishing the development database on all
+host interfaces. The checked-in database credentials are for local debugging
+only, not shared or deployed environments.
+
+Use Docker Engine 28.0.0 or newer for this boundary: older releases can expose
+localhost-published ports to peers on the same network segment. See
+[Docker's port-publishing security notes](https://docs.docker.com/engine/network/port-publishing/).
+This host-port restriction is not authentication or isolation from other local
+processes/containers; do not treat the debug database as production-hardened.
+
 ## Verify changes locally
 
 Use Java 21 and a running Docker daemon accessible to your user. The PostgreSQL
