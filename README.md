@@ -119,6 +119,12 @@ processes/containers; do not treat the debug database as production-hardened.
 
 ## Verify changes locally
 
+SQL statement echo is off by default (`spring.jpa.show-sql=false`) so background
+polling does not print every query. For temporary local troubleshooting, opt in
+with the Spring Boot startup argument `--spring.jpa.show-sql=true` and disable it
+afterwards. Application warnings and errors are unaffected. This setting is not
+log redaction: avoid enabling SQL or parameter tracing with sensitive data.
+
 Use Java 21 and a running Docker daemon accessible to your user. The PostgreSQL
 lease tests use Testcontainers to start an isolated `postgres:16-alpine` container;
 the first run needs access to pull that image and download Maven dependencies.
