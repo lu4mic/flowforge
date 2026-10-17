@@ -92,6 +92,36 @@ SUCCEEDED / FAILED
 Unlock downstream tasks
 ```
 
+## Current execution limits
+
+These are the current single-process polling defaults, not a deployment sizing
+guide or a recovery-time guarantee:
+
+| Setting | Current value | Source |
+| --- | --- | --- |
+| READY-task poll | 1 s fixed delay | [TaskExecutionService](src/main/java/com/lu4mic/workflow_engine/service/TaskExecutionService.java) |
+| Claim batch | Up to 1 task per poll | [TaskLeaseService](src/main/java/com/lu4mic/workflow_engine/service/TaskLeaseService.java) |
+| Lease duration | 30 s from claim or renewal | [TaskLeaseService](src/main/java/com/lu4mic/workflow_engine/service/TaskLeaseService.java) |
+| Heartbeat | 10 s fixed delay | [TaskLeaseService](src/main/java/com/lu4mic/workflow_engine/service/TaskLeaseService.java) |
+| Expired-lease recovery | 5 s fixed delay, up to 10 candidates per scan | [TaskRecoveryService](src/main/java/com/lu4mic/workflow_engine/service/TaskRecoveryService.java) |
+| HTTP connect / read timeout | 10 s each, not a total request deadline | [TaskExecutionService](src/main/java/com/lu4mic/workflow_engine/service/TaskExecutionService.java) |
+| Retry budget / backoff | 3 total attempts; 1 s then 2 s before retries | [TaskRunService](src/main/java/com/lu4mic/workflow_engine/service/TaskRunService.java) |
+| Scheduler pool | 2 threads (`spring.task.scheduling.pool.size`) | [application.properties](src/main/resources/application.properties) |
+
+The timers, batch sizes, HTTP timeouts and retry budget above are currently
+hard-coded; setting similarly named environment variables will not tune them.
+The scheduler pool is a Spring Boot property and can be overridden, for example
+with `--spring.task.scheduling.pool.size=2`.
+
+Fixed delay is measured after the previous invocation finishes. HTTP and DELAY
+execution are synchronous, so the polling interval is not a task-start SLA.
+Recovery must first observe an expired lease; a retry then waits for its backoff
+and a later eligible claim. A 30 s lease therefore does not promise recovery
+within 30 s. Preserve scheduler capacity for heartbeat/recovery when changing
+synchronous execution; pool size alone does not guarantee timely renewal or
+worker throughput. Configurable limits and shutdown behavior remain in
+[backend hardening](https://github.com/lu4mic/flowforge/issues/3).
+
 ## Tech stack
 
 - Java 21
