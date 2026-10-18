@@ -133,6 +133,35 @@ worker throughput. Configurable limits and shutdown behavior remain in
 - Maven
 - Bean Validation
 
+## Current database configuration
+
+The default datasource configuration in
+[application.properties](src/main/resources/application.properties) uses these
+five environment variables, without placeholder defaults:
+
+| Variable | Purpose | VS Code local debug setting |
+| --- | --- | --- |
+| `POSTGRES_HOST` | Database host reachable from the application process | `127.0.0.1` |
+| `POSTGRES_PORT` | Database port on that host | `5432` |
+| `POSTGRES_DB` | Existing database name | `workflow_engine` |
+| `POSTGRES_USER` | Database role used by the application | `local_user` |
+| `POSTGRES_PASSWORD` | Password for that role | Local-only example in [launch.json](.vscode/launch.json); never use a real/shared credential in Git |
+
+The JDBC URL is assembled as
+`jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}`. The existing
+[debug launch configuration](.vscode/launch.json) supplies all five values for its
+debug session, matching the PostgreSQL [task](.vscode/tasks.json). It does not
+export those variables to other terminals. A terminal launch must receive them
+in its own process environment and target an already-created local database/role.
+The repository does not configure a `.env` loader; merely creating that file does
+not provide these values to the application. Keep real credentials out of shell
+history, committed configuration and logs.
+
+The current `spring.jpa.hibernate.ddl-auto=update` can change the selected schema
+on startup. Use a disposable local database, not a shared/production database.
+Versioned schema migrations remain work in
+[backend hardening](https://github.com/lu4mic/flowforge/issues/3).
+
 ## Local debug database boundary
 
 The VS Code `Start debug PostgreSQL` task publishes PostgreSQL as
